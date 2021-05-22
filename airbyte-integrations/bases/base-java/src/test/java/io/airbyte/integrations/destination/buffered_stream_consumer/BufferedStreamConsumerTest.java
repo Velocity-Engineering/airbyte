@@ -24,6 +24,7 @@
 
 package io.airbyte.integrations.destination.buffered_stream_consumer;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -159,6 +160,29 @@ public class BufferedStreamConsumerTest {
     consumeRecords(consumer, expectedRecordsBatch1);
     consumer.accept(STATE_MESSAGE1);
     consumeRecords(consumer, expectedRecordsBatch2);
+    consumer.close();
+
+    verifyStartAndClose();
+
+    final List<AirbyteMessage> expectedRecords = Lists.newArrayList(expectedRecordsBatch1, expectedRecordsBatch2)
+        .stream()
+        .flatMap(Collection::stream)
+        .collect(Collectors.toList());
+    verifyRecords(STREAM_NAME, SCHEMA_NAME, expectedRecords);
+
+    verify(checkpointConsumer).accept(STATE_MESSAGE1);
+  }
+
+  @Test
+  void testExceptionAfterOneStateMessage() throws Exception {
+    final List<AirbyteMessage> expectedRecordsBatch1 = getNRecords(10);
+    final List<AirbyteMessage> expectedRecordsBatch2 = getNRecords(10, 11);
+
+    consumer.start();
+    consumeRecords(consumer, expectedRecordsBatch1);
+    consumer.accept(STATE_MESSAGE1);
+    when(isValidRecord.apply(any())).thenThrow(new IllegalStateException("induced exception"));
+    assertThrows(IllegalStateException.class, () -> consumer.accept(expectedRecordsBatch2.get(0)));
     consumer.close();
 
     verifyStartAndClose();
