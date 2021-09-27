@@ -153,12 +153,13 @@ class ReportStream(BasicAmazonAdsStream, ABC):
                 elif report_status == Status.SUCCESS:
                     metric_objects = self._download_report(report_info, download_url)
                     for metric_object in metric_objects:
-                        yield self._model(
+                        model =  self._model(
                             profileId=report_info.profile_id,
                             recordType=report_info.record_type,
                             reportDate=report_date,
                             metric=metric_object,
                         ).dict()
+                        yield model
                     completed_reports.append(report_info)
             for completed_report in completed_reports:
                 report_infos.remove(completed_report)
@@ -245,6 +246,9 @@ class ReportStream(BasicAmazonAdsStream, ABC):
         if not start_report_date:
             start_report_date = now
 
+        if (now - start_report_date).days > 58:
+            start_report_date = now + timedelta(days=-58)
+        
         for days in range(0, (now - start_report_date).days + 1):
             next_date = start_report_date + timedelta(days=days)
             next_date = next_date.strftime(ReportStream.REPORT_DATE_FORMAT)
@@ -262,10 +266,12 @@ class ReportStream(BasicAmazonAdsStream, ABC):
             start_date = stream_state.get(self.cursor_field)
             if start_date:
                 start_date = pendulum.from_format(start_date, ReportStream.REPORT_DATE_FORMAT, tz="UTC")
+                start_date = start_date.subtract(days=5)
                 # We already processed records for date specified in stream state, move to the day after
                 start_date += timedelta(days=1)
             else:
                 start_date = self._start_date
+
 
         return [{self.cursor_field: date} for date in ReportStream.get_report_date_ranges(start_date)] or [None]
 
@@ -285,6 +291,7 @@ class ReportStream(BasicAmazonAdsStream, ABC):
         :return List of ReportInfo objects each of them has reportId field to check report status.
         """
         report_infos = []
+        logger.info(f"Waiting for profiles {self._profiles} report(s) to be generated")
         for profile in self._profiles:
             for record_type, metrics in self.metrics_map.items():
                 metric_date = self._calc_report_generation_date(report_date, profile)

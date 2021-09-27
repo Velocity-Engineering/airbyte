@@ -25,6 +25,7 @@
 from abc import ABC, abstractmethod
 from http import HTTPStatus
 from typing import Any, Iterable, List, Mapping, MutableMapping, Optional
+import json
 
 import requests
 from airbyte_cdk.sources.streams.core import Stream
@@ -34,7 +35,7 @@ from source_amazon_ads.schemas import CatalogModel
 from source_amazon_ads.schemas.profile import Profile
 from source_amazon_ads.spec import AmazonAdsConfig
 
-URL_BASE = "https://advertising-api.amazon.com/"
+URL_BASE = "https://advertising-api-eu.amazon.com/"
 
 """
 This class hierarchy may seem overcomplicated so here is a visualization of
@@ -99,6 +100,23 @@ class BasicAmazonAdsStream(Stream, ABC):
         self._client_id = config.client_id
         self._url = config.host or URL_BASE
 
+    def replace_value_in_dict(self, item, original_schema):
+        # print(item)
+        # print()
+        if isinstance(item, list):
+            return [self.replace_value_in_dict(i, original_schema) for i in item]
+        elif isinstance(item, dict):
+            if list(item.keys()) == ['$ref']:
+                definitions = item['$ref'][2:].split('/')
+                res = original_schema.copy()
+                for definition in definitions:
+                    res = res[definition]
+                return res
+            else:
+                return { key: self.replace_value_in_dict(i, original_schema) for key, i in item.items()}
+        else:
+            return item
+
     @property
     @abstractmethod
     def model(self) -> CatalogModel:
@@ -107,7 +125,14 @@ class BasicAmazonAdsStream(Stream, ABC):
         """
 
     def get_json_schema(self):
-        return self.model.schema()
+        schema = self.model.schema()
+        for i in range(100):
+            if '$ref' not in json.dumps(schema):
+                break
+            schema = self.replace_value_in_dict(schema.copy(), schema.copy())
+        
+        # del schema['definitions']
+        return schema
 
 
 # Basic full refresh stream
